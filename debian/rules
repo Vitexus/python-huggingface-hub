@@ -1,0 +1,40 @@
+#!/usr/bin/make -f
+
+export PYBUILD_NAME=huggingface_hub
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild
+
+override_dh_auto_configure:
+	# Pin the version in src/huggingface_hub/__init__.py to the release we are
+	# packaging (debian/changelog). The `main` branch of the upstream repo (and
+	# thus of our Vitexus fork) sits ahead of the last tagged release and
+	# carries a "X.Y.Z.dev0" placeholder version there — replace it with the
+	# concrete released version so the built wheel/metadata reports the right
+	# thing. Restored in override_dh_auto_clean.
+	sed -i 's/^__version__ = ".*"/__version__ = "1.22.0"/' src/huggingface_hub/__init__.py
+	# hf-xet (Rust/PyO3 extension) is an *optional* download accelerator, not a
+	# hard runtime requirement: huggingface_hub's own utils/_runtime.py::
+	# is_xet_available() probes for it without raising, and file_download.py
+	# gracefully falls back to plain HTTP downloads (just logging a warning)
+	# when hf_xet is unavailable; there is even a documented HF_HUB_DISABLE_XET
+	# env var to turn it off explicitly. Packaging hf-xet for Debian is a much
+	# bigger undertaking (Rust toolchain + PyO3), so we deliberately drop the
+	# dependency from setup.py at build time rather than package it. Do not
+	# add python3-hf-xet to debian/control's Depends.
+	sed -i '/^    f"{HF_XET_VERSION}; platform_machine/d' setup.py
+	# click's floor (>=8.4.2) is not satisfiable by Debian trixie's
+	# python3-click, which is actually a repackaged 8.1.8 published under the
+	# version string "8.2.0+0.really.8.1.8-1" (dpkg compares it as < 8.4.2).
+	# huggingface_hub only uses click for its `hf` CLI entry point, which is
+	# not exercised by fastembed's programmatic usage, so relax the floor
+	# rather than pull in a newer click from outside apt.
+	sed -i 's/"click>=8.4.2,<9.0.0"/"click"/' setup.py
+	dh_auto_configure
+
+override_dh_auto_clean:
+	dh_auto_clean
+	git checkout -- src/huggingface_hub/__init__.py setup.py 2>/dev/null || true
+
+override_dh_auto_test:
+	# Skip tests - test dependencies not packaged

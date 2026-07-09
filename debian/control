@@ -1,0 +1,38 @@
+Source: huggingface-hub
+Section: python
+Priority: optional
+Maintainer: Vítězslav Dvořák <info@vitexsoftware.cz>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-python,
+ python3-all,
+ python3-setuptools,
+Standards-Version: 4.7.0
+Homepage: https://github.com/huggingface/huggingface_hub
+Vcs-Git: https://github.com/Vitexus/huggingface_hub.git
+Vcs-Browser: https://github.com/Vitexus/huggingface_hub
+Rules-Requires-Root: no
+
+Package: python3-huggingface-hub
+Architecture: all
+Multi-Arch: foreign
+Depends:
+ ${misc:Depends},
+ ${python3:Depends},
+ python3-click,
+ python3-filelock (>= 3.10.0),
+ python3-fsspec (>= 2023.5.0~),
+ python3-httpx (>= 0.23.0~),
+ python3-packaging (>= 20.9~),
+ python3-tqdm (>= 4.42.1~),
+ python3-typing-extensions (>= 4.1.0~),
+ python3-yaml (>= 5.1~),
+Description: client library for the Hugging Face Hub
+ huggingface_hub is the official Python client for the Hugging Face Hub. It
+ allows downloading and publishing models, datasets, and Spaces, managing
+ repositories, and interacting with the Hub's API from Python code or the
+ command line.
+ .
+ This package is built without the optional hf-xet accelerator (a Rust/PyO3
+ extension not available in Debian). huggingface_hub transparently falls
+ back to standard HTTP downloads when hf_xet is not installed.
