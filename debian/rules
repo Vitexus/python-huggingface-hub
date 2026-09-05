@@ -12,7 +12,7 @@ override_dh_auto_configure:
 	# carries a "X.Y.Z.dev0" placeholder version there — replace it with the
 	# concrete released version so the built wheel/metadata reports the right
 	# thing. Restored in override_dh_auto_clean.
-	sed -i 's/^__version__ = ".*"/__version__ = "1.22.0"/' src/huggingface_hub/__init__.py
+	sed -i 's/^__version__ = ".*"/__version__ = "1.30.0"/' src/huggingface_hub/__init__.py
 	# hf-xet (Rust/PyO3 extension) is an *optional* download accelerator, not a
 	# hard runtime requirement: huggingface_hub's own utils/_runtime.py::
 	# is_xet_available() probes for it without raising, and file_download.py
