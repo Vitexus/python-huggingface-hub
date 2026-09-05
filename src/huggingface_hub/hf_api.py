@@ -162,7 +162,7 @@ from .utils import (
 from .utils import tqdm as hf_tqdm
 from .utils._auth import _get_token_from_environment, _get_token_from_file, _get_token_from_google_colab
 from .utils._deprecation import _deprecate_arguments, _deprecate_method
-from .utils._http import _httpx_follow_relative_redirects_with_backoff
+from .utils._http import _httpx_follow_hub_redirects_with_backoff
 from .utils._runtime import is_xet_available
 from .utils._typing import CallableT
 from .utils._verification import collect_local_files, resolve_local_root, verify_maps
@@ -2677,8 +2677,6 @@ class HfApi:
                 A string or list of strings that can be used to identify datasets on
                 the Hub by the size of the dataset such as `100K<n<1M` or
                 `1M<n<10M`.
-            tags (`str` or `List`, *optional*):
-                Deprecated. Pass tags in `filter` to filter datasets by tags.
             task_categories (`str` or `List`, *optional*):
                 A string or list of strings that can be used to identify datasets on
                 the Hub by the designed task, such as `audio_classification` or
@@ -2733,7 +2731,7 @@ class HfApi:
         ... )
 
         # List FiftyOne datasets (identified by the tag "fiftyone" in dataset card)
-        >>> api.list_datasets(tags="fiftyone")
+        >>> api.list_datasets(filter="fiftyone")
         ```
 
         Example usage with the `search` argument:
@@ -3696,7 +3694,8 @@ class HfApi:
                 `None` or `"model"` if it is a model. Default is `None`.
             revision (`str`, *optional*):
                 The revision to resolve. Can be a branch name, a tag, a PR ref or a commit hash. Defaults to the
-                default branch. If a [`ResolvedRevision`] is passed, it is returned as is.
+                default branch. If a [`ResolvedRevision`] is passed, it is returned as is - unless it was resolved
+                against another repo, in which case the revision it initially requested is resolved again.
             cache_dir (`str`, `Path`, *optional*):
                 Path to the folder where cached files are stored. Defaults to the value of `HF_HUB_CACHE`.
             local_files_only (`bool`, *optional*, defaults to `False`):
@@ -3730,13 +3729,18 @@ class HfApi:
             >>> weights = hf_hub_download("openai-community/gpt2", "model.safetensors", revision=revision)
             ```
         """
-        if isinstance(revision, ResolvedRevision):
-            return revision
-        if revision is not None and REGEX_COMMIT_HASH.match(revision):
-            return ResolvedRevision(resolved=revision, initial=revision)
-
         if repo_type is None:
             repo_type = constants.REPO_TYPE_MODEL
+
+        if isinstance(revision, ResolvedRevision):
+            # A commit hash means nothing outside of the repo it was resolved for. `_repo_id=None` means the repo is
+            # unknown (instance built by hand), in which case it is assumed to fit any repo.
+            if revision._repo_id is None or (revision._repo_id, revision._repo_type) == (repo_id, repo_type):
+                return revision  # already resolved for this repo => nothing to do
+            revision = revision.initial  # resolved for another repo => resolve what was initially requested
+        if revision is not None and REGEX_COMMIT_HASH.match(revision):
+            return ResolvedRevision(resolved=revision, initial=revision, repo_id=repo_id, repo_type=repo_type)
+
         if cache_dir is None:
             cache_dir = constants.HF_HUB_CACHE
         storage_folder = str(
@@ -3754,7 +3758,7 @@ class HfApi:
                     )
                 except OSError as e:
                     logger.warning(f"Ignored error while caching commit hash for '{repo_id}': {e}.")
-                return ResolvedRevision(resolved=sha, initial=revision)
+                return ResolvedRevision(resolved=sha, initial=revision, repo_id=repo_id, repo_type=repo_type)
             except httpx.ProxyError:
                 # Actually raise on proxy error: a misconfigured proxy is not an unreachable Hub
                 raise
@@ -3770,7 +3774,9 @@ class HfApi:
         if ref_path.is_file():
             if error is not None:
                 logger.warning(f"Could not reach the Hub ({error}). Using cached commit hash for '{repo_id}'.")
-            return ResolvedRevision(resolved=ref_path.read_text().strip(), initial=revision)
+            return ResolvedRevision(
+                resolved=ref_path.read_text().strip(), initial=revision, repo_id=repo_id, repo_type=repo_type
+            )
 
         reason = (
             "'local_files_only=True' is set"
@@ -13055,6 +13061,7 @@ class HfApi:
     def list_scheduled_jobs(
         self,
         *,
+        labels: dict[str, str] | None = None,
         timeout: int | None = None,
         namespace: str | None = None,
         token: bool | str | None = None,
@@ -13063,6 +13070,10 @@ class HfApi:
         List scheduled compute Jobs on Hugging Face infrastructure.
 
         Args:
+            labels (`dict[str, str]`, *optional*):
+                Only return scheduled Jobs that have all the given `key=value` labels, e.g.
+                `{"env": "prod", "team": "ml"}`.
+
             timeout (`float`, *optional*):
                 Whether to set a timeout for the request to the Hub.
 
@@ -13073,16 +13084,33 @@ class HfApi:
                 A valid user access token. If not provided, the locally saved token will be used, which is the
                 recommended authentication method. Set to `False` to disable authentication.
                 Refer to: https://huggingface.co/docs/huggingface_hub/quick-start#authentication.
+
+        Returns:
+            `list[ScheduledJobInfo]`: a list of [`ScheduledJobInfo`] objects.
         """
         if namespace is None:
             namespace = self.whoami(token=token)["name"]
+        params: dict[str, Any] = {}
+        if labels:
+            # The endpoint only supports a single `label` filter server-side. Send the first one to keep the
+            # payload small, then filter the remaining ones client-side.
+            key, value = next(iter(labels.items()))
+            params["label"] = f"{key}={value}"
         response = get_session().get(
             f"{self.endpoint}/api/scheduled-jobs/{namespace}",
             headers=self._build_hf_headers(token=token),
+            params=params or None,
             timeout=timeout,
         )
         hf_raise_for_status(response)
-        return [ScheduledJobInfo(**scheduled_job_info) for scheduled_job_info in response.json()]
+        scheduled_jobs = [ScheduledJobInfo(**scheduled_job_info) for scheduled_job_info in response.json()]
+        if labels:
+            scheduled_jobs = [
+                scheduled_job
+                for scheduled_job in scheduled_jobs
+                if all((scheduled_job.job_spec.labels or {}).get(key) == value for key, value in labels.items())
+            ]
+        return scheduled_jobs
 
     def inspect_scheduled_job(
         self,
@@ -13975,6 +14003,51 @@ class HfApi:
         hf_raise_for_status(response)
 
     @validate_hf_hub_args
+    def update_bucket_settings(
+        self,
+        bucket_id: str,
+        *,
+        private: bool,
+        token: bool | str | None = None,
+    ) -> None:
+        """Update the settings of a bucket on the Hub.
+
+        Currently, the only supported setting is the bucket's visibility.
+
+        Args:
+            bucket_id (`str`):
+                The ID of the bucket (e.g. `"username/my-bucket"`).
+            private (`bool`):
+                Whether to make the bucket private.
+            token (`bool` or `str`, *optional*):
+                A valid user access token (string). Defaults to the locally saved
+                token, which is the recommended method for authentication (see
+                https://huggingface.co/docs/huggingface_hub/quick-start#authentication).
+                To disable authentication, pass `False`.
+
+        Raises:
+            [`~errors.BucketNotFoundError`]: If the bucket cannot be found. This may be because it doesn't exist,
+            or because it is set to `private` and you do not have access.
+
+        Example:
+            ```python
+            >>> from huggingface_hub import update_bucket_settings
+
+            >>> # Make a bucket public
+            >>> update_bucket_settings(bucket_id="Wauplin/first-bucket", private=False)
+
+            >>> # Make it private again
+            >>> update_bucket_settings(bucket_id="Wauplin/first-bucket", private=True)
+            ```
+        """
+        response = get_session().put(
+            f"{self.endpoint}/api/buckets/{bucket_id}/settings",
+            headers=self._build_hf_headers(token=token),
+            json={"private": private},
+        )
+        hf_raise_for_status(response)
+
+    @validate_hf_hub_args
     def list_bucket_tree(
         self,
         bucket_id: str,
@@ -14690,7 +14763,7 @@ class HfApi:
             42000
             ```
         """
-        response = _httpx_follow_relative_redirects_with_backoff(
+        response = _httpx_follow_hub_redirects_with_backoff(
             "HEAD",
             f"{self.endpoint}/buckets/{bucket_id}/resolve/{quote(remote_path, safe='')}",
             headers=self._build_hf_headers(token=token),
@@ -15317,6 +15390,7 @@ bucket_info = api.bucket_info
 list_buckets = api.list_buckets
 delete_bucket = api.delete_bucket
 move_bucket = api.move_bucket
+update_bucket_settings = api.update_bucket_settings
 list_bucket_tree = api.list_bucket_tree
 get_bucket_paths_info = api.get_bucket_paths_info
 copy_files = api.copy_files

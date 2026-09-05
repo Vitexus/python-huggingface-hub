@@ -674,6 +674,18 @@ To get detailed information about a specific bucket (returned as JSON), use `hf 
 }
 ```
 
+### Change bucket visibility
+
+To switch a bucket between private and public, use `hf buckets settings`:
+
+```bash
+# Make a bucket private
+>>> hf buckets settings username/my-bucket --private
+
+# Make it public again
+>>> hf buckets settings username/my-bucket --public
+```
+
 ### Delete a bucket
 
 To delete a bucket, use `hf buckets delete`. You will be prompted for confirmation unless you pass `--yes`:
@@ -2159,6 +2171,11 @@ Manage scheduled jobs using
 # List your active scheduled jobs
 >>> hf jobs scheduled ls
 
+# Same filters as `hf jobs ls`: --status, --label and --name
+>>> hf jobs scheduled ls --all
+>>> hf jobs scheduled ls --status suspended
+>>> hf jobs scheduled ls --name hourly-task --label env=prod
+
 # Inspect the status of a job
 >>> hf jobs scheduled inspect <scheduled_job_id>
 
@@ -2178,6 +2195,10 @@ Manage scheduled jobs using
 ## hf sandbox
 
 `hf sandbox` spins up isolated cloud machines built on Jobs: create one, run commands with live-streamed output, and copy files in and out. Any Docker image with `/bin/sh` works. See the [Sandboxes guide](./sandbox) for the Python API, and the [conceptual guide](../concepts/sandbox) for how it works under the hood.
+
+> [!NOTE]
+> Sandboxes are experimental, and their API and behavior may change without notice. Shared sandboxes are intended for
+> workloads within the same trust boundary; use a dedicated sandbox for workloads that do not trust each other.
 
 ```bash
 # Create a sandbox (waits until it is ready, prints its id)

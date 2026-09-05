@@ -40,7 +40,7 @@ $ hf [OPTIONS] [COMMAND] [ARGS]...
 * `models`: Interact with models on the Hub.
 * `papers`: Interact with papers on the Hub.
 * `repos`: Manage repos on the Hub. [alias: repo]
-* `sandbox`: Run and manage sandboxes on Hugging Face...
+* `sandbox`: Run and manage experimental sandboxes on...
 * `skills`: Manage skills for AI assistants.
 * `spaces`: Interact with spaces on the Hub.
 * `sync`: Sync files between local directory and a...
@@ -241,6 +241,7 @@ $ hf buckets [OPTIONS] COMMAND [ARGS]...
 * `list`: List buckets or files in a bucket. [alias: ls]
 * `move`: Move (rename) a bucket to a new name or...
 * `remove`: Remove files from a bucket. [alias: rm]
+* `settings`: Update bucket settings (visibility).
 * `sync`: Sync files between local directory and a...
 
 ### `hf buckets cp`
@@ -486,6 +487,37 @@ Examples
   $ hf buckets rm user/my-bucket/logs/ --recursive
   $ hf buckets rm user/my-bucket --recursive --include "*.tmp"
   $ hf buckets rm user/my-bucket/data/ --recursive --dry-run
+
+Learn more
+  Use `hf <command> --help` for more information about a command.
+  Read the documentation at https://huggingface.co/docs/huggingface_hub/en/guides/cli
+
+
+### `hf buckets settings`
+
+Update bucket settings (visibility).
+
+**Usage**:
+
+```console
+$ hf buckets settings [OPTIONS] BUCKET_ID
+```
+
+**Arguments**:
+
+* `BUCKET_ID`: Bucket ID: namespace/bucket_name or hf://buckets/namespace/bucket_name  [required]
+
+**Options**:
+
+* `--private`: Make the bucket private.
+* `--public`: Make the bucket public.
+* `--token TEXT`: A User Access Token generated from https://huggingface.co/settings/tokens.
+* `--help`: Show this message and exit.
+
+Examples
+  $ hf buckets settings user/my-bucket --private
+  $ hf buckets settings user/my-bucket --public
+  $ hf buckets settings hf://buckets/user/my-bucket --private
 
 Learn more
   Use `hf <command> --help` for more information about a command.
@@ -2509,7 +2541,7 @@ $ hf jobs scheduled [OPTIONS] COMMAND [ARGS]...
 * `delete`: Delete a scheduled Job.
 * `inspect`: Display detailed information on one or...
 * `labels`: Update labels on a scheduled Job.
-* `list`: List scheduled Jobs [alias: ls, ps]
+* `list`: List scheduled Jobs. [alias: ls, ps]
 * `resume`: Resume (unpause) a scheduled Job.
 * `run`: Schedule a Job.
 * `suspend`: Suspend (pause) a scheduled Job.
@@ -2607,7 +2639,10 @@ Learn more
 
 #### `hf jobs scheduled list | ls | ps`
 
-List scheduled Jobs
+List scheduled Jobs.
+
+Use `--status` to filter by status (`active` or `suspended`) and `--label` to filter by `key=value` labels.
+A scheduled Job must match every filter to be listed.
 
 **Usage**:
 
@@ -2617,14 +2652,21 @@ $ hf jobs scheduled list | ls | ps [OPTIONS]
 
 **Options**:
 
-* `-a, --all`: Show all scheduled Jobs (default hides suspended)
+* `-a, --all`: Show all scheduled Jobs (default hides suspended). Cannot be combined with --status.
+* `--status [active|suspended]`: Only show scheduled Jobs with the given status. Comma-separated or repeated, e.g. `--status suspended`.
+* `-l, --label TEXT`: Only show scheduled Jobs with the given `key=value` label. Repeat to require several labels, e.g. `--label env=prod --label team=ml`.
+* `--name TEXT`: Only show scheduled Jobs with the given name (shortcut for `--label name=NAME`).
 * `--namespace TEXT`: The namespace where the job will be running. Defaults to the current user's namespace.
 * `--token TEXT`: A User Access Token generated from https://huggingface.co/settings/tokens.
-* `-f, --filter TEXT`: Filter output based on conditions provided (format: key=value)
+* `-f, --filter TEXT`: (Deprecated) Use `--status` and `--label` instead.
 * `--help`: Show this message and exit.
 
 Examples
   $ hf jobs scheduled ls
+  $ hf jobs scheduled ls -a
+  $ hf jobs scheduled ls --status suspended
+  $ hf jobs scheduled ls --name daily-script
+  $ hf jobs scheduled ls --label env=prod --label team=ml
 
 Learn more
   Use `hf <command> --help` for more information about a command.
@@ -3816,7 +3858,7 @@ Learn more
 
 ## `hf sandbox`
 
-Run and manage sandboxes on Hugging Face Jobs.
+Run and manage experimental sandboxes on Hugging Face Jobs.
 
 **Usage**:
 
@@ -3834,7 +3876,7 @@ $ hf sandbox [OPTIONS] COMMAND [ARGS]...
 * `create`: Create a sandbox: a dedicated VM by...
 * `exec`: Run a command in a sandbox, streaming output.
 * `kill`: Terminate a sandbox, a whole shared host,...
-* `pool`: Warm pools of host VMs and spawn cheap...
+* `pool`: Warm host VM pools and spawn experimental...
 * `process`: List and stop background processes running...
 * `spawn`: Start a long-running command in the...
 
@@ -3984,7 +4026,7 @@ Learn more
 
 ### `hf sandbox pool`
 
-Warm pools of host VMs and spawn cheap shared sandboxes from them.
+Warm host VM pools and spawn experimental shared sandboxes for workloads within the same trust boundary.
 
 **Usage**:
 
